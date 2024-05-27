@@ -60,6 +60,11 @@ private:
   mjData *d;
 };
 
+struct RaycastResult {
+  mjtNum distance;
+  int geom_id;
+};
+
 class Simulation {
 public:
   Simulation(Model *m, State *s) {
@@ -81,6 +86,33 @@ public:
     mj_applyFT(_model->ptr(), _state->ptr(), 
                force, torque, point, body, 
                _state->ptr()->qfrc_applied);
+  }
+
+  RaycastResult raycast(
+    mjtNum px, mjtNum py, mjtNum pz, 
+    mjtNum dx, mjtNum dy, mjtNum dz, val geomgroup, int bodyexclude) {
+    mjtNum point [3] = { px, py, pz };
+    mjtNum dir[3] = { dx, dy, dz };
+    int geom_id[1] = { 0 };
+
+    mjtByte* group = NULL;
+    if (!geomgroup.isNull() && !geomgroup.isUndefined())
+    {
+      group = new mjtByte[geomgroup["length"].as<int>()];
+      for (int i = 0; i < geomgroup["length"].as<int>(); i++) {
+        group[i] = static_cast<mjtByte>(geomgroup[i].as<int>() == 1 ? 255 : 0);
+      }
+    }
+
+    mjtNum dist =  mj_ray(_model->ptr(), _state->ptr(),
+                  point, dir, group, 1,
+                  bodyexclude, geom_id);
+
+    RaycastResult result;
+    result.distance = dist;
+    result.geom_id = geom_id[0];
+    
+    return result;
   }
 
   // copied from the source of mjv_applyPerturbPose
@@ -157,6 +189,11 @@ int main(int argc, char **argv) {
 
 EMSCRIPTEN_BINDINGS(mujoco_wasm) {
 
+    value_object<RaycastResult>("RaycastResult")
+        .field("distance", &RaycastResult::distance)
+        .field("geom_id", &RaycastResult::geom_id)
+        ;
+
   // MODEL_ENUMS
 
 
@@ -183,6 +220,7 @@ EMSCRIPTEN_BINDINGS(mujoco_wasm) {
       .function("model"     , &Simulation::model, allow_raw_pointers())
       .function("free"      , &Simulation::free      )
       .function("applyForce", &Simulation::applyForce)
+      .function("raycast"   , &Simulation::raycast, allow_raw_pointers())
       .function("applyPose" , &Simulation::applyPose )
       // MJDATA_BINDINGS
       ;
