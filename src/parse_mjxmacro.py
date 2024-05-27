@@ -46,6 +46,40 @@ def parse_int_line(line:str, header_lines:list[str], mj_definitions:list[str], e
 
     typescript_definitions.append('  '+name.ljust(22)+': '+('number').rjust(12)+';')
 
+def parse_pointer_line_with_mjv(line:str, header_lines:list[str], mj_definitions:list[str], emscripten_bindings:list[str], typescript_definitions:list[str]):
+    elements = line.strip("    XMJV(").split(""")""")[0].strip().split(",")
+    elements = [e.strip() for e in elements]
+
+    model_ptr = "m" if parse_mode[1] == "model" else "_model->ptr()"
+    if elements[3].startswith("MJ_M("):
+        elements[3] = model_ptr+"->"+elements[3][5:]
+    if parse_mode[1] == "model":
+        mj_definitions .append('  val  '+elements[1].ljust(22)+' () const { return val(typed_memory_view(m->'+elements[2].ljust(15)+' * '+elements[3].ljust(9)+', m->'+elements[1].ljust(22)+' )); }')
+    else:
+        mj_definitions .append('  val  '+elements[1].ljust(22)+' () const { return val(typed_memory_view(_model->ptr()->'+elements[2].ljust(15)+' * '+elements[3].ljust(9)+', _state->ptr()->'+elements[1].ljust(22)+' )); }')
+    emscripten_bindings.append('      .property('+('"'+elements[1]+'"').ljust(24)+', &'+("Model" if parse_mode[1] == "model" else "Simulation")+'::'+elements[1].ljust(22)+')')
+    # Iterate through the original header file looking for comments
+    for model_line in header_lines:
+        if elements[0]+"* " in model_line and elements[1]+";" in model_line:
+            comment = model_line.split("//")[1].strip()
+            typescript_definitions.append("  /** "+ comment +"*/")
+            break
+    typescript_definitions.append('  '+elements[1].ljust(22)+': '+types_to_array_types[elements[0]].rjust(12)+';')
+
+def parse_int_line_with_mjv(line:str, header_lines:list[str], mj_definitions:list[str], emscripten_bindings:list[str], typescript_definitions:list[str]):
+    name = line.strip("    XMJV(").split(""")""")[0].strip()
+    mj_definitions     .append('  int  '+name.ljust(14)+'() const { return m->'+name.ljust(14)+'; }')
+    emscripten_bindings.append('      .property('+('"'+name+'"').ljust(24)+', &Model::'+name.ljust(22)+')')
+
+    # Iterate through the file looking for comments
+    for model_line in header_lines:
+        if "int " in model_line and name+";" in model_line:
+            comment = model_line.split("//")[1].strip()
+            typescript_definitions.append("  /** "+ comment +"*/")
+            break
+
+    typescript_definitions.append('  '+name.ljust(22)+': '+('number').rjust(12)+';')
+
 
 with open("../include/mujoco/mjmodel.h") as f:
     model_lines = f.readlines()
@@ -67,12 +101,24 @@ with open("../include/mujoco/mjxmacro.h") as f:
                                        auto_gen_lines[parse_mode[1]+"_definitions"], 
                                        auto_gen_lines[parse_mode[1]+"_bindings"], 
                                        auto_gen_lines[parse_mode[1]+"_typescript"])
+                elif line.strip().startswith("XMJV("):
+                    parse_pointer_line_with_mjv(line, 
+                                       model_lines if parse_mode[1] == "model" else data_lines, 
+                                       auto_gen_lines[parse_mode[1]+"_definitions"], 
+                                       auto_gen_lines[parse_mode[1]+"_bindings"], 
+                                       auto_gen_lines[parse_mode[1]+"_typescript"])
                 else:
                     parse_mode = (None, None)
 
             if parse_mode[0] == "ints":
                 if line.strip().startswith("X("):
                     parse_int_line(line, 
+                                   model_lines if parse_mode[1] == "model" else data_lines, 
+                                   auto_gen_lines[parse_mode[1]+"_definitions"], 
+                                   auto_gen_lines[parse_mode[1]+"_bindings"], 
+                                   auto_gen_lines[parse_mode[1]+"_typescript"])
+                elif line.strip().startswith("XMJV("):
+                    parse_int_line_with_mjv(line, 
                                    model_lines if parse_mode[1] == "model" else data_lines, 
                                    auto_gen_lines[parse_mode[1]+"_definitions"], 
                                    auto_gen_lines[parse_mode[1]+"_bindings"], 
@@ -123,6 +169,7 @@ for function in functions.FUNCTIONS:
             param_type = param_type.replace("mjtNum","number").replace("int","number").replace("float","number").replace("size_t", "number").replace("unsigned char", "string")
             def_typescript.append(param.name + " : " + param_type)
         else:
+            print("Invalid function:", function)
             valid_function = False
     if valid_function:
         is_string = False
