@@ -284,16 +284,16 @@ type RaycastResult = {
 export interface Contact {
   geom1: number;
   geom2: number;
-  point: Float64Array;
+  pos: Float64Array;
   frame: Float64Array;
   dist: number;
   friction: Float64Array;
-  body1: number;
-  body2: number;
+  solref: Float64Array;
+  solimp: Float64Array;
   mu: number;
   H: Float64Array;
+  includemargin: number;
 }
-
 
 interface Vector<T> {
   size(): number;
