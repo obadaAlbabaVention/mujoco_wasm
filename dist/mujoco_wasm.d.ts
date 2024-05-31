@@ -281,6 +281,24 @@ type RaycastResult = {
   geom_id: number;
 }
 
+export interface Contact {
+  geom1: number;
+  geom2: number;
+  pos: Float64Array;
+  frame: Float64Array;
+  dist: number;
+  friction: Float64Array;
+  solref: Float64Array;
+  solimp: Float64Array;
+  mu: number;
+  H: Float64Array;
+  includemargin: number;
+}
+
+interface Vector<T> {
+  size(): number;
+  get(i: number): T | undefined;
+}
 // ENUMS
 /**  disable default feature bitflags        */
 export enum mjtDisableBit {
@@ -1426,7 +1444,8 @@ export interface State {
 }
 
 export interface Simulation {
-  new (model : Model, state : State) : Simulation;
+  new(model: Model, state: State): Simulation;
+  ncon: number;
   state() : State;
   model() : Model;
   /** Free the memory associated with both the model and the state in the simulation */
@@ -1449,6 +1468,8 @@ export interface Simulation {
    * bodyexclude - body to exclude from the raycast
    */
   raycast(px: number, py: number, pz: number, vx: number, vy: number, vz: number, geomgroup: Uint8Array | null, bodyexclude: number): RaycastResult;
+
+  getContacts(): Vector<Contact>;
   
   // DATA_INTERFACE
   /** position                                 (nq x 1)*/
