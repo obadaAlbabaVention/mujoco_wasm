@@ -10,7 +10,7 @@ import   load_mujoco        from '../dist/mujoco_wasm.js';
 const mujoco = await load_mujoco();
 
 // Set up Emscripten's Virtual File System
-var initialScene = "humanoid.xml";
+var initialScene = "raycast.xml";
 mujoco.FS.mkdir('/working');
 mujoco.FS.mount(mujoco.MEMFS, { root: '.' }, '/working');
 mujoco.FS.writeFile("/working/" + initialScene, await(await fetch("./examples/scenes/" + initialScene)).text());
@@ -69,6 +69,20 @@ export class MuJoCoDemo {
     this.controls.update();
 
     window.addEventListener('resize', this.onWindowResize.bind(this));
+    document.addEventListener(
+      "keydown",
+      (event) => {
+        const keyName = event.key
+
+        if (keyName === "r") {
+          //const geomgroup = new Uint8Array([0, 1, 0]);
+          const res = this.simulation.raycast(0, 0, 5, 0, 0, -1, null, 0);
+          console.log(res)
+          return
+        }
+      },
+      false
+    )
 
     // Initialize the Drag State Manager.
     this.dragStateManager = new DragStateManager(this.scene, this.renderer, this.camera, this.container.parentElement, this.controls);

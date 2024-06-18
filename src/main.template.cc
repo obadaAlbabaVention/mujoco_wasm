@@ -60,6 +60,32 @@ private:
   mjData *d;
 };
 
+struct RaycastResult {
+  mjtNum distance;
+  int geom_id;
+};
+
+
+struct Contact
+{
+  mjtNum distance;
+  val pos;
+  val frame;
+
+  mjtNum includemargin;           // include if dist<includemargin=margin-gap
+  val friction;                   // tangent1, 2, spin, roll1, 2
+  val solref;          // constraint solver reference
+  val solimp;          // constraint solver impedance
+
+  int geom1;
+  int geom2;
+
+  mjtNum mu;                      // friction of regularized cone, set by mj_makeConstraint
+  val H;                          // cone Hessian, set by mj_updateConstraint
+};
+
+
+
 class Simulation {
 public:
   Simulation(Model *m, State *s) {
@@ -71,6 +97,27 @@ public:
   Model *model() { return _model; }
   void    free() { mju_free(_state); mju_free(_model); }
 
+  std::vector<Contact> getContacts() {
+    std::vector<Contact> values;
+    for( size_t i = 0 ; i < _state->ptr()->ncon ; i++ )
+    {
+        Contact c;
+        c.geom1 = _state->ptr()->contact[i].geom1;
+        c.geom2 = _state->ptr()->contact[i].geom2;
+        c.distance = _state->ptr()->contact[i].dist;
+        c.pos = val(typed_memory_view(3, _state->ptr()->contact[i].pos));
+        c.frame = val(typed_memory_view(9, _state->ptr()->contact[i].frame));
+        c.includemargin = _state->ptr()->contact[i].includemargin;
+        c.friction = val(typed_memory_view(5, _state->ptr()->contact[i].friction));
+        c.solref = val(typed_memory_view(mjNREF, _state->ptr()->contact[i].solref));
+        c.solimp = val(typed_memory_view(mjNIMP, _state->ptr()->contact[i].solimp));
+        c.mu = _state->ptr()->contact[i].mu;
+        c.H = val(typed_memory_view(36, _state->ptr()->contact[i].H));
+        values.push_back(c);
+    }
+    return values;
+  }
+
   void applyForce(
     mjtNum fx, mjtNum fy, mjtNum fz, 
     mjtNum tx, mjtNum ty, mjtNum tz,  
@@ -81,6 +128,33 @@ public:
     mj_applyFT(_model->ptr(), _state->ptr(), 
                force, torque, point, body, 
                _state->ptr()->qfrc_applied);
+  }
+
+  RaycastResult raycast(
+    mjtNum px, mjtNum py, mjtNum pz, 
+    mjtNum dx, mjtNum dy, mjtNum dz, val geomgroup, int bodyexclude) {
+    mjtNum point [3] = { px, py, pz };
+    mjtNum dir[3] = { dx, dy, dz };
+    int geom_id[1] = { 0 };
+
+    mjtByte* group = NULL;
+    if (!geomgroup.isNull() && !geomgroup.isUndefined())
+    {
+      group = new mjtByte[geomgroup["length"].as<int>()];
+      for (int i = 0; i < geomgroup["length"].as<int>(); i++) {
+        group[i] = static_cast<mjtByte>(geomgroup[i].as<int>() == 1 ? 255 : 0);
+      }
+    }
+
+    mjtNum dist =  mj_ray(_model->ptr(), _state->ptr(),
+                  point, dir, group, 1,
+                  bodyexclude, geom_id);
+
+    RaycastResult result;
+    result.distance = dist;
+    result.geom_id = geom_id[0];
+    
+    return result;
   }
 
   // copied from the source of mjv_applyPerturbPose
@@ -142,8 +216,7 @@ public:
   }
 
   // MJDATA_DEFINITIONS
-
-
+  int  ncon                   () const { return _state->ptr()->ncon       ; }
 private:
   Model *_model;
   State *_state;
@@ -156,6 +229,25 @@ int main(int argc, char **argv) {
 }
 
 EMSCRIPTEN_BINDINGS(mujoco_wasm) {
+
+    value_object<RaycastResult>("RaycastResult")
+        .field("distance", &RaycastResult::distance)
+        .field("geom_id", &RaycastResult::geom_id)
+        ;
+
+    value_object<Contact>("Contact")
+        .field("dist", &Contact::distance)
+        .field("geom1", &Contact::geom1)
+        .field("geom2", &Contact::geom2)
+        .field("pos", &Contact::pos)
+        .field("frame", &Contact::frame)
+        .field("friction", &Contact::friction)
+        .field("solref", &Contact::solref)
+        .field("solimp", &Contact::solimp)
+        .field("includemargin", &Contact::includemargin)
+        .field("mu", &Contact::mu)
+        .field("H", &Contact::H)
+        ;
 
   // MODEL_ENUMS
 
@@ -183,8 +275,11 @@ EMSCRIPTEN_BINDINGS(mujoco_wasm) {
       .function("model"     , &Simulation::model, allow_raw_pointers())
       .function("free"      , &Simulation::free      )
       .function("applyForce", &Simulation::applyForce)
+      .function("raycast"   , &Simulation::raycast, allow_raw_pointers())
+      .function("getContacts", &Simulation::getContacts)
       .function("applyPose" , &Simulation::applyPose )
       // MJDATA_BINDINGS
+      .property("ncon", &Simulation::ncon)
       ;
 
   value_object<mjModel>("mjModel")
@@ -265,5 +360,5 @@ EMSCRIPTEN_BINDINGS(mujoco_wasm) {
       .field("disableflags"        , &mjOption::disableflags)      // bit flags for disabling standard features
       .field("enableflags"         , &mjOption::enableflags);      // bit flags for enabling optional features
 
-  register_vector<mjContact>("vector<mjContact>");
+  register_vector<Contact>("vector<Contact>");
 }
